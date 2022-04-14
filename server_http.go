@@ -6,6 +6,12 @@ import (
 	"log"
 	"net/http"
 	"io/ioutil"
+	// Пакет html/template помогает гарантировать, что только 
+	// безопасный и правильно выглядящий HTML генерируется действиями
+	// шаблона. Например, он автоматически экранирует знак «больше»
+	// (>), заменяя его с помощью &gt;, чтобы убедиться, что данные
+	// пользователя не повреждают HTML форму.
+	"html/template"
 )
 
 type Page struct {
@@ -77,10 +83,11 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		p = &Page{Title: title}
 	}
-	fmt.Fprintf(w, "<h1>Editing %s</h1>"+
-					"<form action=\"/save/%s\" method=\"POST\">"+
-					"<textarea name=\"body\">%s</textarea><br>"+
-					"<input type=\"submit\" value=\"Save\">"+
-					"</form>",
-					p.Title, p.Title, p.Body)
+	// Функция template.ParseFiles будет читать содержимое edit.html
+	// и возвращать *template.Template.
+	t, _ := template.ParseFiles("edit.html")
+	// Метод t.Execute выполняет шаблон, записывая сгенерированный
+	// HTML для http.ResponseWriter. Точечные идентификаторы .Title
+	// и .Body относятся к p.Title и p.Body. 
+	t.Execute(w, p)
 }
