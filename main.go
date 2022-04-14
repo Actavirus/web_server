@@ -19,6 +19,13 @@ type Page struct {
 	Body []byte
 }
 
+// Функция template.Must - это удобная оболочка, 
+// которая паникует когда передано ненулевое значение error, 
+// а в противном случае возвращает *Template без изменений. 
+// Здесь уместна паника; если шаблоны не могут быть загружены, 
+// единственное разумное, что нужно сделать, это выйти из программы.
+var templates = template.Must(template.ParseFiles("html/edit.html", "html/view.html"))
+
 
 func main()  {
 	// Функция main начинается с вызова http.HandleFunc, 
@@ -30,7 +37,7 @@ func main()  {
 	mux.HandleFunc("/", handler)
 	mux.HandleFunc("/view/", viewHandler)
 	mux.HandleFunc("/edit/", editHandler)
-	// mux.HandleFunc("/save/", saveHandler)
+	mux.HandleFunc("/save/", saveHandler)
 	log.Println("Запуск сервера на http://127.0.0.1:8080")
 	// Затем он вызывает http.ListenAndServe, указывая, что он 
 	// должен прослушивать порт 8080 на любом интерфейсе (":8080").
@@ -73,8 +80,14 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	// Опять же, обратите внимание на использование _ для игнорирования error, 
 	// при возвращении значения из loadPage. Это сделано здесь для простоты и 
 	// вообще считается плохой практикой. 
-	p, _ := loadPage(title)
-	fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", p.Title, p.Body)
+	p, err := loadPage(title)
+	if err != nil {
+		// Функция http.Redirect добавляет код статуса HTTP http.StatusFound(302) и
+		// Location заголовок к HTTP ответу.
+		http.Redirect(w, r, "/edit/"+ title, http.StatusFound)
+		return
+	}
+	renderTemplate(w, "html/view", p)
 }
 
 // Функция editHandler загружает страницу (или, если он не существует, 
@@ -85,11 +98,49 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		p = &Page{Title: title}
 	}
-	// Функция template.ParseFiles будет читать содержимое edit.html
+	renderTemplate(w, "html/edit", p)
+}
+
+func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
+	// Функция template.ParseFiles будет читать содержимое *.html
 	// и возвращать *template.Template.
-	t, _ := template.ParseFiles("html/edit.html")
+	t, err :=template.ParseFiles(tmpl + ".html")
+	if err != nil {
+		// Функция http.Error отправляет указанный код HTTP ответа
+		// (в данном случае "Internal Server Error") и сообщение об ошибке. 
+		// Решение о том, чтобы поместить обработку шаблонов в 
+		// отдельную функцию, уже окупается.
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	// Метод t.Execute выполняет шаблон, записывая сгенерированный
 	// HTML для http.ResponseWriter. Точечные идентификаторы .Title
 	// и .Body относятся к p.Title и p.Body. 
-	t.Execute(w, p)
+	err = t.Execute(w, p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// Функция saveHandler будет обрабатывать отправку форм, 
+// которые находятся на страницах редактирования.
+func saveHandler(w http.ResponseWriter, r *http.Request) {
+	// Заголовок страницы (указан в URL) и единственное поле формы, 
+	// Body хранятся на новой Page. Затем вызывается метод save() 
+	// для записи данных в файл, и клиент перенаправляется на страницу /view/.
+	title := r.URL.Path[len("/save/"):]
+	body := r.FormValue("body")
+	// Значение, возвращаемое FormValue, имеет тип string. 
+	// Мы должны преобразовать это значение в []byte, прежде 
+	// чем оно уместится в структуре Page. Мы используем
+	// []byte(body) для выполнения преобразования.
+	p := &Page{Title: title, Body: []byte(body)}
+	err := p.save()
+	// О любых ошибках, возникающих во время p.save(), 
+	// будет сообщено пользователю.
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/view/" + title, http.StatusFound)
 }
