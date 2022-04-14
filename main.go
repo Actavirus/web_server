@@ -24,6 +24,8 @@ func main()  {
 	// Функция main начинается с вызова http.HandleFunc, 
 	// который сообщает пакету http обрабатывать все корневые 
 	// веб запросы ("/") с помощью handler:
+	// Используется функция http.NewServeMux() для инициализации нового рутера, затем
+    // функцию "handler" регистрируется как обработчик для URL-шаблона "/".
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handler)
 	mux.HandleFunc("/view/", viewHandler)
@@ -85,7 +87,7 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Функция template.ParseFiles будет читать содержимое edit.html
 	// и возвращать *template.Template.
-	t, _ := template.ParseFiles("edit.html")
+	t, _ := template.ParseFiles("html/edit.html")
 	// Метод t.Execute выполняет шаблон, записывая сгенерированный
 	// HTML для http.ResponseWriter. Точечные идентификаторы .Title
 	// и .Body относятся к p.Title и p.Body. 
