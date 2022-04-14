@@ -104,7 +104,7 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 	// Функция template.ParseFiles будет читать содержимое *.html
 	// и возвращать *template.Template.
-	t, err :=template.ParseFiles(tmpl + ".html")
+	err :=templates.ExecuteTemplate(w, tmpl + ".html", p)
 	if err != nil {
 		// Функция http.Error отправляет указанный код HTTP ответа
 		// (в данном случае "Internal Server Error") и сообщение об ошибке. 
@@ -116,10 +116,10 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 	// Метод t.Execute выполняет шаблон, записывая сгенерированный
 	// HTML для http.ResponseWriter. Точечные идентификаторы .Title
 	// и .Body относятся к p.Title и p.Body. 
-	err = t.Execute(w, p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	// err = t.Execute(w, p)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// }
 }
 
 // Функция saveHandler будет обрабатывать отправку форм, 
