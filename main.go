@@ -12,6 +12,8 @@ import (
 	// (>), заменяя его с помощью &gt;, чтобы убедиться, что данные
 	// пользователя не повреждают HTML форму.
 	"html/template"
+	"regexp"
+	"errors"
 )
 
 type Page struct {
@@ -26,6 +28,11 @@ type Page struct {
 // единственное разумное, что нужно сделать, это выйти из программы.
 var templates = template.Must(template.ParseFiles("html/edit.html", "html/view.html"))
 
+// Функция regexp.MustCompile проанализирует и скомпилирует регулярное 
+// выражение и вернет regexp.Regexp. MustCompile отличается от Compile тем, 
+// что он вызывает panic, если компиляция выражения не удается, а Compile 
+// возвращает error в качестве второго параметра.
+var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
 func main()  {
 	// Функция main начинается с вызова http.HandleFunc, 
@@ -35,9 +42,9 @@ func main()  {
     // функцию "handler" регистрируется как обработчик для URL-шаблона "/".
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handler)
-	mux.HandleFunc("/view/", viewHandler)
-	mux.HandleFunc("/edit/", editHandler)
-	mux.HandleFunc("/save/", saveHandler)
+	mux.HandleFunc("/view/", makeHandler(viewHandler))
+	mux.HandleFunc("/edit/", makeHandler(viewHandler))
+	mux.HandleFunc("/save/", makeHandler(viewHandler))
 	log.Println("Запуск сервера на http://127.0.0.1:8080")
 	// Затем он вызывает http.ListenAndServe, указывая, что он 
 	// должен прослушивать порт 8080 на любом интерфейсе (":8080").
@@ -75,8 +82,11 @@ func loadPage(title string) (*Page, error) {
 	return &Page{Title: title, Body: body}, nil
 }
 
-func viewHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/view/"):]
+func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	// Опять же, обратите внимание на использование _ для игнорирования error, 
 	// при возвращении значения из loadPage. Это сделано здесь для простоты и 
 	// вообще считается плохой практикой. 
@@ -92,8 +102,11 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 
 // Функция editHandler загружает страницу (или, если он не существует, 
 // создает пустую структуру Page), и отображает HTML форму.
-func editHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/edit/"):]
+func editHandler(w http.ResponseWriter, r *http.Request, title string) {
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	p, err := loadPage(title)
 	if err != nil {
 		p = &Page{Title: title}
@@ -124,18 +137,21 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 
 // Функция saveHandler будет обрабатывать отправку форм, 
 // которые находятся на страницах редактирования.
-func saveHandler(w http.ResponseWriter, r *http.Request) {
+func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	// Заголовок страницы (указан в URL) и единственное поле формы, 
 	// Body хранятся на новой Page. Затем вызывается метод save() 
 	// для записи данных в файл, и клиент перенаправляется на страницу /view/.
-	title := r.URL.Path[len("/save/"):]
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	body := r.FormValue("body")
 	// Значение, возвращаемое FormValue, имеет тип string. 
 	// Мы должны преобразовать это значение в []byte, прежде 
 	// чем оно уместится в структуре Page. Мы используем
 	// []byte(body) для выполнения преобразования.
 	p := &Page{Title: title, Body: []byte(body)}
-	err := p.save()
+	err = p.save()
 	// О любых ошибках, возникающих во время p.save(), 
 	// будет сообщено пользователю.
 	if err != nil {
@@ -143,4 +159,40 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/view/" + title, http.StatusFound)
+}
+
+// Теперь давайте напишем функцию, которая использует validPath выражение
+// для проверки пути и извлечения заголовка страницы:
+// Если заголовок действителен, он будет возвращен вместе с ошибкой со 
+// значением nil. Если заголовок недействителен, функция напишет ошибку
+// «404 Not Found» для HTTP-соединения и вернет ошибку обработчику. 
+func getTitle (w http.ResponseWriter, r *http.Request) (string, error) {
+	m := validPath.FindStringSubmatch(r.URL.Path)
+	if m == nil {
+		http.NotFound(w, r)
+		return "", errors.New("Invalid Page Title")
+	}
+	return m[2], nil // title это второе подвыражение.
+}
+
+// Теперь давайте определим функцию-обертку, которая принимает 
+// функцию верхнего типа и возвращает функцию типа 
+// http.HandlerFunc (подходит для передачи в функцию http.HandleFunc):
+// Замыкание, возвращаемое makeHandler, является функцией, которая 
+// принимает http.ResponseWriter и http.Request (другими словами, 
+// http.HandlerFunc). Замыкание извлекает title из пути запроса и 
+// проверяет его с помощью TitleValidator regexp. Если title 
+// недействителен, ошибка будет записана в ResponseWriter с помощью
+// функции http.NotFound. Если title допустим, вложенная 
+// функция-обработчик fn будет вызываться с помощью ResponseWriter,
+// Request и title в качестве аргументов.
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m := validPath.FindStringSubmatch(r.URL.Path)
+		if m == nil {
+			http.NotFound(w, r)
+			return
+		}
+		fn(w, r, m[2])
+	}
 }
