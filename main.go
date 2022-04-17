@@ -26,7 +26,7 @@ type Page struct {
 // а в противном случае возвращает *Template без изменений. 
 // Здесь уместна паника; если шаблоны не могут быть загружены, 
 // единственное разумное, что нужно сделать, это выйти из программы.
-var templates = template.Must(template.ParseFiles("html/edit.html", "html/view.html"))
+var templates = template.Must(template.ParseFiles("edit.html", "view.html"))
 
 // Функция regexp.MustCompile проанализирует и скомпилирует регулярное 
 // выражение и вернет regexp.Regexp. MustCompile отличается от Compile тем, 
@@ -40,11 +40,11 @@ func main()  {
 	// веб запросы ("/") с помощью handler:
 	// Используется функция http.NewServeMux() для инициализации нового рутера, затем
     // функцию "handler" регистрируется как обработчик для URL-шаблона "/".
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handler)
-	mux.HandleFunc("/view/", makeHandler(viewHandler))
-	mux.HandleFunc("/edit/", makeHandler(viewHandler))
-	mux.HandleFunc("/save/", makeHandler(viewHandler))
+	// mux := http.NewServeMux()
+	http.HandleFunc("/", handler)
+	http.HandleFunc("/view/", makeHandler(viewHandler))
+	http.HandleFunc("/edit/", makeHandler(editHandler))
+	http.HandleFunc("/save/", makeHandler(saveHandler))
 	log.Println("Запуск сервера на http://127.0.0.1:8080")
 	// Затем он вызывает http.ListenAndServe, указывая, что он 
 	// должен прослушивать порт 8080 на любом интерфейсе (":8080").
@@ -52,7 +52,7 @@ func main()  {
 	// ListenAndServe всегда возвращает ошибку, поскольку она возвращается 
 	// только тогда, когда случилась неожиданная ошибка. 
 	// Чтобы записать эту ошибку в лог, мы заключаем вызов функции в log.Fatal.:
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 // Функция handler имеет тип http.HandlerFunc. 
@@ -83,10 +83,6 @@ func loadPage(title string) (*Page, error) {
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
-	title, err := getTitle(w, r)
-	if err != nil {
-		return
-	}
 	// Опять же, обратите внимание на использование _ для игнорирования error, 
 	// при возвращении значения из loadPage. Это сделано здесь для простоты и 
 	// вообще считается плохой практикой. 
@@ -97,21 +93,17 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 		http.Redirect(w, r, "/edit/"+ title, http.StatusFound)
 		return
 	}
-	renderTemplate(w, "html/view", p)
+	renderTemplate(w, "view", p)
 }
 
 // Функция editHandler загружает страницу (или, если он не существует, 
 // создает пустую структуру Page), и отображает HTML форму.
 func editHandler(w http.ResponseWriter, r *http.Request, title string) {
-	title, err := getTitle(w, r)
-	if err != nil {
-		return
-	}
 	p, err := loadPage(title)
 	if err != nil {
 		p = &Page{Title: title}
 	}
-	renderTemplate(w, "html/edit", p)
+	renderTemplate(w, "edit", p)
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
@@ -141,17 +133,13 @@ func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
 	// Заголовок страницы (указан в URL) и единственное поле формы, 
 	// Body хранятся на новой Page. Затем вызывается метод save() 
 	// для записи данных в файл, и клиент перенаправляется на страницу /view/.
-	title, err := getTitle(w, r)
-	if err != nil {
-		return
-	}
 	body := r.FormValue("body")
 	// Значение, возвращаемое FormValue, имеет тип string. 
 	// Мы должны преобразовать это значение в []byte, прежде 
 	// чем оно уместится в структуре Page. Мы используем
 	// []byte(body) для выполнения преобразования.
 	p := &Page{Title: title, Body: []byte(body)}
-	err = p.save()
+	err := p.save()
 	// О любых ошибках, возникающих во время p.save(), 
 	// будет сообщено пользователю.
 	if err != nil {
